@@ -1,46 +1,198 @@
-<script>
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ESP32 Instrumentation Console</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #12161b;
+      --panel: #1a2027;
+      --panel-line: #262d36;
+      --amber: #ffb020;
+      --teal: #3ddc97;
+      --red: #ff5c5c;
+      --text: #e8ecef;
+      --muted: #7d8894;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      background-image:
+        linear-gradient(var(--panel-line) 1px, transparent 1px),
+        linear-gradient(90deg, var(--panel-line) 1px, transparent 1px);
+      background-size: 32px 32px;
+      background-attachment: fixed;
+      font-family: 'Inter', sans-serif;
+      color: var(--text);
+      min-height: 100vh;
+      padding: 32px 20px 60px;
+    }
+    .console { max-width: 1100px; margin: 0 auto; }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid var(--panel-line);
+      padding-bottom: 20px;
+      margin-bottom: 28px;
+      flex-wrap: wrap;
+      gap: 14px;
+    }
+    .brand-eyebrow {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin: 0 0 6px;
+    }
+    h1 { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -0.01em; }
+    #status {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      padding: 8px 14px;
+      border-radius: 4px;
+      background: var(--panel);
+      border: 1px solid var(--panel-line);
+    }
+    .led { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+    .led.live { background: var(--teal); box-shadow: 0 0 8px var(--teal); animation: pulse 1.6s ease-in-out infinite; }
+    .led.offline { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+    .gauges { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 32px; }
+    .gauge { background: var(--panel); border: 1px solid var(--panel-line); border-radius: 6px; padding: 18px 20px; position: relative; overflow: hidden; }
+    .gauge::before {
+      content: attr(data-ch);
+      position: absolute;
+      top: 14px;
+      right: 16px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--panel-line);
+      font-weight: 700;
+    }
+    .gauge-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin: 0 0 10px;
+    }
+    .gauge-value { font-family: 'JetBrains Mono', monospace; font-size: 36px; font-weight: 700; line-height: 1; color: var(--amber); }
+    .gauge-unit { font-size: 15px; color: var(--muted); font-weight: 400; margin-left: 4px; }
+    .gauge-scale { margin-top: 14px; height: 3px; background: var(--panel-line); border-radius: 2px; overflow: hidden; }
+    .gauge-scale-fill { height: 100%; background: var(--teal); width: 0%; transition: width 0.6s ease; }
+    .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
+    .chart-box { background: var(--panel); border: 1px solid var(--panel-line); border-radius: 6px; padding: 16px; }
+    .chart-box h3 {
+      margin: 0 0 10px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 500;
+    }
+    footer { text-align: center; margin-top: 40px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--panel-line); letter-spacing: 0.08em; }
+    @media (max-width: 480px) { .gauge-value { font-size: 28px; } h1 { font-size: 21px; } }
+  </style>
+</head>
+<body>
+  <div class="console">
+    <header>
+      <div>
+        <p class="brand-eyebrow">EE 288 · Real-Time Telemetry</p>
+        <h1>ESP32 Instrumentation Console</h1>
+      </div>
+      <div id="status">
+        <span class="led offline" id="led"></span>
+        <span id="status-text">Initializing…</span>
+      </div>
+    </header>
+
+    <div class="gauges">
+      <div class="gauge" data-ch="CH.01">
+        <p class="gauge-label">Temperature</p>
+        <div><span class="gauge-value" id="temp">--</span><span class="gauge-unit">°C</span></div>
+        <div class="gauge-scale"><div class="gauge-scale-fill" id="temp-fill"></div></div>
+      </div>
+      <div class="gauge" data-ch="CH.02">
+        <p class="gauge-label">Humidity</p>
+        <div><span class="gauge-value" id="hum">--</span><span class="gauge-unit">%RH</span></div>
+        <div class="gauge-scale"><div class="gauge-scale-fill" id="hum-fill"></div></div>
+      </div>
+      <div class="gauge" data-ch="CH.03">
+        <p class="gauge-label">Light</p>
+        <div><span class="gauge-value" id="light">--</span><span class="gauge-unit">raw</span></div>
+        <div class="gauge-scale"><div class="gauge-scale-fill" id="light-fill"></div></div>
+      </div>
+      <div class="gauge" data-ch="CH.04">
+        <p class="gauge-label">Distance</p>
+        <div><span class="gauge-value" id="distance">--</span><span class="gauge-unit">cm</span></div>
+        <div class="gauge-scale"><div class="gauge-scale-fill" id="distance-fill"></div></div>
+      </div>
+    </div>
+
+    <div class="charts">
+      <div class="chart-box"><h3>Temperature — °C</h3><canvas id="tempChart" height="160"></canvas></div>
+      <div class="chart-box"><h3>Humidity — %RH</h3><canvas id="humChart" height="160"></canvas></div>
+      <div class="chart-box"><h3>Light — raw ADC</h3><canvas id="lightChart" height="160"></canvas></div>
+      <div class="chart-box"><h3>Distance — cm</h3><canvas id="distanceChart" height="160"></canvas></div>
+    </div>
+
+    <footer>MQTT ▸ FLASK ▸ CHART.JS — SESSION LOG</footer>
+  </div>
+
+  <script>
     const maxPoints = 20;
     const labels = [];
 
-    function createChart(ctx, label, color) {
+    function createChart(ctx, color) {
       return new Chart(ctx, {
         type: 'line',
-        data: {
-          labels: labels,
-          datasets: [{
-            label: label,
-            data: [],
-            borderColor: color,
-            fill: false,
-            tension: 0.3
-          }]
-        },
+        data: { labels: labels, datasets: [{ data: [], borderColor: color, backgroundColor: color + '22', fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2 }] },
         options: {
           animation: false,
-          scales: { x: { display: true }, y: { beginAtZero: false } }
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { display: true, grid: { color: '#262d36' }, ticks: { color: '#7d8894', font: { family: 'JetBrains Mono', size: 10 } } },
+            y: { grid: { color: '#262d36' }, ticks: { color: '#7d8894', font: { family: 'JetBrains Mono', size: 10 } } }
+          }
         }
       });
     }
 
-    const tempChart = createChart(document.getElementById('tempChart'), 'Temperature (°C)', 'red');
-    const humChart = createChart(document.getElementById('humChart'), 'Humidity (%)', 'blue');
-    const lightChart = createChart(document.getElementById('lightChart'), 'Light', 'orange');
-    const distanceChart = createChart(document.getElementById('distanceChart'), 'Distance (cm)', 'green');
+    const tempChart = createChart(document.getElementById('tempChart'), '#ffb020');
+    const humChart = createChart(document.getElementById('humChart'), '#3ddc97');
+    const lightChart = createChart(document.getElementById('lightChart'), '#ffb020');
+    const distanceChart = createChart(document.getElementById('distanceChart'), '#3ddc97');
 
     function pushData(chart, value) {
       chart.data.datasets[0].data.push(value);
-      if (chart.data.datasets[0].data.length > maxPoints) {
-        chart.data.datasets[0].data.shift();
-      }
+      if (chart.data.datasets[0].data.length > maxPoints) chart.data.datasets[0].data.shift();
       chart.update();
     }
 
+    function setFill(id, pct) {
+      document.getElementById(id).style.width = Math.max(0, Math.min(100, pct)) + '%';
+    }
+
     async function updateData() {
+      const statusEl = document.getElementById('status-text');
+      const ledEl = document.getElementById('led');
+
       try {
         const res = await fetch('/data');
         const data = await res.json();
-
-        const statusEl = document.getElementById('status');
         const secondsAgo = data.last_update ? Math.floor(Date.now()/1000 - data.last_update) : null;
         const isLive = secondsAgo !== null && secondsAgo < 15;
 
@@ -50,8 +202,13 @@
           document.getElementById('light').innerText = data.light ?? '--';
           document.getElementById('distance').innerText = data.distance ?? '--';
 
-          statusEl.innerText = `🟢 Live — updated ${secondsAgo}s ago`;
-          statusEl.style.color = 'green';
+          setFill('temp-fill', (data.temperature / 50) * 100);
+          setFill('hum-fill', data.humidity);
+          setFill('light-fill', (data.light / 4095) * 100);
+          setFill('distance-fill', (data.distance / 100) * 100);
+
+          ledEl.className = 'led live';
+          statusEl.textContent = `LIVE — updated ${secondsAgo}s ago`;
 
           const now = new Date().toLocaleTimeString();
           labels.push(now);
@@ -62,21 +219,17 @@
           pushData(lightChart, data.light);
           pushData(distanceChart, data.distance);
         } else {
-          document.getElementById('temp').innerText = 'N/A';
-          document.getElementById('hum').innerText = 'N/A';
-          document.getElementById('light').innerText = 'N/A';
-          document.getElementById('distance').innerText = 'N/A';
-
-          statusEl.innerText = `⚠️ Live readings unavailable — hardware components are currently not connected`;
-          statusEl.style.color = '#e67e22';
+          ledEl.className = 'led offline';
+          statusEl.textContent = 'Live readings unavailable — sensor hardware not connected';
         }
       } catch (err) {
-        console.error('Error fetching data:', err);
-        document.getElementById('status').innerText = '⚠️ Live readings unavailable — hardware components are currently not connected';
-        document.getElementById('status').style.color = '#e67e22';
+        ledEl.className = 'led offline';
+        statusEl.textContent = 'Live readings unavailable — sensor hardware not connected';
       }
     }
 
     setInterval(updateData, 2000);
     updateData();
-</script>
+  </script>
+</body>
+</html>
