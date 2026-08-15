@@ -1,0 +1,82 @@
+<script>
+    const maxPoints = 20;
+    const labels = [];
+
+    function createChart(ctx, label, color) {
+      return new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: label,
+            data: [],
+            borderColor: color,
+            fill: false,
+            tension: 0.3
+          }]
+        },
+        options: {
+          animation: false,
+          scales: { x: { display: true }, y: { beginAtZero: false } }
+        }
+      });
+    }
+
+    const tempChart = createChart(document.getElementById('tempChart'), 'Temperature (°C)', 'red');
+    const humChart = createChart(document.getElementById('humChart'), 'Humidity (%)', 'blue');
+    const lightChart = createChart(document.getElementById('lightChart'), 'Light', 'orange');
+    const distanceChart = createChart(document.getElementById('distanceChart'), 'Distance (cm)', 'green');
+
+    function pushData(chart, value) {
+      chart.data.datasets[0].data.push(value);
+      if (chart.data.datasets[0].data.length > maxPoints) {
+        chart.data.datasets[0].data.shift();
+      }
+      chart.update();
+    }
+
+    async function updateData() {
+      try {
+        const res = await fetch('/data');
+        const data = await res.json();
+
+        const statusEl = document.getElementById('status');
+        const secondsAgo = data.last_update ? Math.floor(Date.now()/1000 - data.last_update) : null;
+        const isLive = secondsAgo !== null && secondsAgo < 15;
+
+        if (isLive) {
+          document.getElementById('temp').innerText = data.temperature ?? '--';
+          document.getElementById('hum').innerText = data.humidity ?? '--';
+          document.getElementById('light').innerText = data.light ?? '--';
+          document.getElementById('distance').innerText = data.distance ?? '--';
+
+          statusEl.innerText = `🟢 Live — updated ${secondsAgo}s ago`;
+          statusEl.style.color = 'green';
+
+          const now = new Date().toLocaleTimeString();
+          labels.push(now);
+          if (labels.length > maxPoints) labels.shift();
+
+          pushData(tempChart, data.temperature);
+          pushData(humChart, data.humidity);
+          pushData(lightChart, data.light);
+          pushData(distanceChart, data.distance);
+        } else {
+          document.getElementById('temp').innerText = 'N/A';
+          document.getElementById('hum').innerText = 'N/A';
+          document.getElementById('light').innerText = 'N/A';
+          document.getElementById('distance').innerText = 'N/A';
+
+          statusEl.innerText = `⚠️ Live readings unavailable — hardware components are currently not connected`;
+          statusEl.style.color = '#e67e22';
+        }
+      } catch (err) {
+        console.error('Error fetching data:', err);
+        document.getElementById('status').innerText = '⚠️ Live readings unavailable — hardware components are currently not connected';
+        document.getElementById('status').style.color = '#e67e22';
+      }
+    }
+
+    setInterval(updateData, 2000);
+    updateData();
+</script>
